@@ -414,6 +414,10 @@ impl Mempool {
     pub fn entry_size(&self) -> usize {
         self.entry_size
     }
+
+    pub fn num_entries(&self) -> usize {
+        self.num_entries
+    }
 }
 
 /// Returns `num_packets` free packets from the `pool` with size `packet_size`.

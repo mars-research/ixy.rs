@@ -244,6 +244,14 @@ impl IxyDevice for VirtioDevice {
         // Virtio doesn't have a "link speed" per se so we just return something reasonable
         1000
     }
+
+    fn add_rx_queue(&mut self, pool: Rc<Mempool>) -> Result<u16, Box<dyn Error>> {
+        todo!()
+    }
+
+    fn add_tx_queue(&mut self, pool: Rc<Mempool>) -> Result<u16, Box<dyn Error>> {
+        todo!()
+    }
 }
 
 impl VirtioDevice {

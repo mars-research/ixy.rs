@@ -31,6 +31,7 @@ use self::virtio::VirtioDevice;
 use std::collections::VecDeque;
 use std::error::Error;
 use std::os::unix::io::RawFd;
+use std::rc::Rc;
 
 /// Used for implementing an ixy device driver like ixgbe or virtio.
 pub trait IxyDevice {
@@ -51,6 +52,12 @@ pub trait IxyDevice {
 
     /// Sets the layer 2 address of this device.
     fn set_mac_addr(&self, mac: [u8; 6]);
+
+    /// Add an rx_queue to the Nic. The mempool needs to be allocated by the application
+    fn add_rx_queue(&mut self, pool: Rc<Mempool>) -> Result<u16, Box<dyn Error>>;
+
+    /// Add a tx_queue to the Nic. The mempool needs to be allocated by the application
+    fn add_tx_queue(&mut self, pool: Rc<Mempool>) -> Result<u16, Box<dyn Error>>;
 
     /// Pushes up to `num_packets` `Packet`s onto `buffer` depending on the amount of
     /// received packets by the network card. Returns the number of received packets.
@@ -198,8 +205,6 @@ impl DeviceStats {
 /// while `interrupt_timeout` enables interrupts if greater or less than zero.
 pub fn ixy_init(
     pci_addr: &str,
-    rx_queues: u16,
-    tx_queues: u16,
     interrupt_timeout: i16,
 ) -> Result<Box<dyn IxyDevice>, Box<dyn Error>> {
     let mut vendor_file = pci_open_resource_ro(pci_addr, "vendor").expect("wrong pci address");
@@ -216,9 +221,6 @@ pub fn ixy_init(
 
     if vendor_id == 0x1af4 && device_id == 0x1000 {
         // `device_id == 0x1041` would be for non-transitional devices which we don't support atm
-        if rx_queues > 1 || tx_queues > 1 {
-            warn!("cannot configure multiple rx/tx queues: we don't support multiqueue (VIRTIO_NET_F_MQ)");
-        }
         if interrupt_timeout != 0 {
             warn!("interrupts requested but virtio does not support interrupts yet");
         }
@@ -231,11 +233,13 @@ pub fn ixy_init(
         if interrupt_timeout != 0 {
             warn!("interrupts requested but ixgbevf does not support interrupts yet");
         }
-        let device = IxgbeVFDevice::init(pci_addr, rx_queues, tx_queues)?;
+        println!("ixgbevf");
+        let device = IxgbeVFDevice::init(pci_addr)?;
         Ok(Box::new(device))
     } else {
         // let's give it a try with ixgbe
-        let device = IxgbeDevice::init(pci_addr, rx_queues, tx_queues, interrupt_timeout)?;
+        println!("ixgbevf");
+        let device = IxgbeDevice::init(pci_addr, interrupt_timeout)?;
         Ok(Box::new(device))
     }
 }
@@ -288,5 +292,13 @@ impl IxyDevice for Box<dyn IxyDevice> {
 
     fn get_link_speed(&self) -> u16 {
         (**self).get_link_speed()
+    }
+
+    fn add_rx_queue(&mut self, pool: Rc<Mempool>) -> Result<u16, Box<dyn Error>> {
+        (**self).add_rx_queue(pool)
+    }
+
+    fn add_tx_queue(&mut self, pool: Rc<Mempool>) -> Result<u16, Box<dyn Error>> {
+        (**self).add_tx_queue(pool)
     }
 }

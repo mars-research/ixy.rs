@@ -29,12 +29,13 @@ pub fn main() {
         }
     };
 
-    let mut dev = ixy_init(&pci_addr, 1, 1, 0).unwrap();
+    let mut dev = ixy_init(&pci_addr, 0).unwrap();
+    println!("{:x?}", dev.get_mac_addr());
 
     #[rustfmt::skip]
     let mut pkt_data = [
-        0x01, 0x02, 0x03, 0x04, 0x05, 0x06,         // dst MAC
-        0x10, 0x10, 0x10, 0x10, 0x10, 0x10,         // src MAC
+        0x90, 0xe2, 0xba, 0xb5, 0x03, 0x34,// dst mac
+        0x90, 0xe2, 0xba, 0xb3, 0xbb, 0x30, // src mac
         0x08, 0x00,                                 // ether type: IPv4
         0x45, 0x00,                                 // Version, IHL, TOS
         ((PACKET_SIZE - 14) >> 8) as u8,            // ip len excluding ethernet, high byte
@@ -54,23 +55,25 @@ pub fn main() {
     // VFs: src MAC must be MAC of the device (spoof check of PF)
     pkt_data[6..12].clone_from_slice(&dev.get_mac_addr());
 
-    let pool = Mempool::allocate(NUM_PACKETS, 0).unwrap();
+    let rx_pool = Mempool::allocate(NUM_PACKETS, 1514).unwrap();
+    let tx_pool = Mempool::allocate(NUM_PACKETS, 0).unwrap();
 
     // pre-fill all packet buffer in the pool with data and return them to the packet pool
-    {
-        let mut buffer: VecDeque<Packet> = VecDeque::with_capacity(NUM_PACKETS);
+    let mut tx_buffer: VecDeque<Packet> = VecDeque::with_capacity(NUM_PACKETS);
+    let mut rx_buffer: VecDeque<Packet> = VecDeque::with_capacity(NUM_PACKETS);
+    alloc_pkt_batch(&tx_pool, &mut tx_buffer, NUM_PACKETS, PACKET_SIZE);
 
-        alloc_pkt_batch(&pool, &mut buffer, NUM_PACKETS, PACKET_SIZE);
+    let tx_queue_id = dev.add_tx_queue(tx_pool.clone()).unwrap();
+    let rx_queue_id = dev.add_rx_queue(rx_pool.clone()).unwrap();
 
-        for p in buffer.iter_mut() {
-            for (i, data) in pkt_data.iter().enumerate() {
-                p[i] = *data;
-            }
-            let checksum = calc_ipv4_checksum(&p[14..14 + 20]);
-            // Calculated checksum is little-endian; checksum field is big-endian
-            p[24] = (checksum >> 8) as u8;
-            p[25] = (checksum & 0xff) as u8;
+    for p in tx_buffer.iter_mut() {
+        for (i, data) in pkt_data.iter().enumerate() {
+            p[i] = *data;
         }
+        let checksum = calc_ipv4_checksum(&p[14..14 + 20]);
+        // Calculated checksum is little-endian; checksum field is big-endian
+        p[24] = (checksum >> 8) as u8;
+        p[25] = (checksum & 0xff) as u8;
     }
 
     let mut dev_stats = Default::default();
@@ -81,22 +84,21 @@ pub fn main() {
     dev.read_stats(&mut dev_stats);
     dev.read_stats(&mut dev_stats_old);
 
-    let mut buffer: VecDeque<Packet> = VecDeque::with_capacity(BATCH_SIZE);
     let mut time = Instant::now();
     let mut seq_num = 0;
     let mut counter = 0;
 
     loop {
         // re-fill our packet queue with new packets to send out
-        alloc_pkt_batch(&pool, &mut buffer, BATCH_SIZE, PACKET_SIZE);
+        let num_pkts = alloc_pkt_batch(&tx_pool, &mut tx_buffer, BATCH_SIZE, PACKET_SIZE);
 
         // update sequence number of all packets (and checksum if necessary)
-        for p in buffer.iter_mut() {
+        for p in tx_buffer.iter_mut() {
             LittleEndian::write_u32(&mut p[(PACKET_SIZE - 4)..], seq_num);
             seq_num = seq_num.wrapping_add(1);
         }
 
-        dev.tx_batch_busy_wait(0, &mut buffer);
+        dev.tx_batch_busy_wait(tx_queue_id, &mut tx_buffer);
 
         // don't poll the time unnecessarily
         if counter & 0xfff == 0 {
