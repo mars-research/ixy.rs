@@ -31,7 +31,7 @@ use self::virtio::VirtioDevice;
 use std::collections::VecDeque;
 use std::error::Error;
 use std::os::unix::io::RawFd;
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// Used for implementing an ixy device driver like ixgbe or virtio.
 pub trait IxyDevice {
@@ -54,10 +54,10 @@ pub trait IxyDevice {
     fn set_mac_addr(&self, mac: [u8; 6]);
 
     /// Add an rx_queue to the Nic. The mempool needs to be allocated by the application
-    fn add_rx_queue(&mut self, pool: Rc<Mempool>) -> Result<u16, Box<dyn Error>>;
+    fn add_rx_queue(&mut self, pool: Arc<Mempool>) -> Result<u16, Box<dyn Error>>;
 
     /// Add a tx_queue to the Nic. The mempool needs to be allocated by the application
-    fn add_tx_queue(&mut self, pool: Rc<Mempool>) -> Result<u16, Box<dyn Error>>;
+    fn add_tx_queue(&mut self, pool: Arc<Mempool>) -> Result<u16, Box<dyn Error>>;
 
     /// Pushes up to `num_packets` `Packet`s onto `buffer` depending on the amount of
     /// received packets by the network card. Returns the number of received packets.
@@ -294,11 +294,11 @@ impl IxyDevice for Box<dyn IxyDevice> {
         (**self).get_link_speed()
     }
 
-    fn add_rx_queue(&mut self, pool: Rc<Mempool>) -> Result<u16, Box<dyn Error>> {
+    fn add_rx_queue(&mut self, pool: Arc<Mempool>) -> Result<u16, Box<dyn Error>> {
         (**self).add_rx_queue(pool)
     }
 
-    fn add_tx_queue(&mut self, pool: Rc<Mempool>) -> Result<u16, Box<dyn Error>> {
+    fn add_tx_queue(&mut self, pool: Arc<Mempool>) -> Result<u16, Box<dyn Error>> {
         (**self).add_tx_queue(pool)
     }
 }

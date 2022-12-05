@@ -5,7 +5,7 @@ use std::fmt::{self, Debug};
 use std::io::{self, Read, Seek};
 use std::ops::{Deref, DerefMut};
 use std::os::unix::io::{AsRawFd, RawFd};
-use std::rc::Rc;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::{fs, mem, process, ptr, slice};
@@ -192,7 +192,7 @@ pub struct Packet {
     pub(crate) addr_virt: *mut u8,
     pub(crate) addr_phys: usize,
     pub(crate) len: usize,
-    pub(crate) pool: Rc<Mempool>,
+    pub(crate) pool: Arc<Mempool>,
     pub(crate) pool_entry: usize,
 }
 
@@ -237,7 +237,7 @@ impl Packet {
         addr_virt: *mut u8,
         addr_phys: usize,
         len: usize,
-        pool: Rc<Mempool>,
+        pool: Arc<Mempool>,
         pool_entry: usize,
     ) -> Packet {
         Packet {
@@ -260,7 +260,7 @@ impl Packet {
     }
 
     /// Returns a reference to the packet`s pool.
-    pub fn get_pool(&self) -> &Rc<Mempool> {
+    pub fn get_pool(&self) -> &Arc<Mempool> {
         &self.pool
     }
 
@@ -348,7 +348,7 @@ impl Mempool {
     /// # Panics
     ///
     /// Panics if `size` is not a divisor of the page size.
-    pub fn allocate(entries: usize, size: usize) -> Result<Rc<Mempool>, Box<dyn Error>> {
+    pub fn allocate(entries: usize, size: usize) -> Result<Arc<Mempool>, Box<dyn Error>> {
         let entry_size = match size {
             0 => 2048,
             x => x,
@@ -380,7 +380,7 @@ impl Mempool {
 
         unsafe { memset(pool.base_addr, pool.num_entries * pool.entry_size, 0x00) }
 
-        let pool = Rc::new(pool);
+        let pool = Arc::new(pool);
         pool.free_stack.borrow_mut().extend(0..entries);
 
         Ok(pool)
@@ -422,7 +422,7 @@ impl Mempool {
 
 /// Returns `num_packets` free packets from the `pool` with size `packet_size`.
 pub fn alloc_pkt_batch(
-    pool: &Rc<Mempool>,
+    pool: &Arc<Mempool>,
     buffer: &mut VecDeque<Packet>,
     num_packets: usize,
     packet_size: usize,
@@ -443,7 +443,7 @@ pub fn alloc_pkt_batch(
 
 /// Returns a free packet from the `pool`, or [`None`] if the requested packet size exceeds the
 /// maximum size for that pool or if the pool is empty.
-pub fn alloc_pkt(pool: &Rc<Mempool>, size: usize) -> Option<Packet> {
+pub fn alloc_pkt(pool: &Arc<Mempool>, size: usize) -> Option<Packet> {
     if size > pool.entry_size - PACKET_HEADROOM {
         return None;
     }
@@ -453,7 +453,7 @@ pub fn alloc_pkt(pool: &Rc<Mempool>, size: usize) -> Option<Packet> {
             pool.get_virt_addr(id).add(PACKET_HEADROOM),
             pool.get_phys_addr(id) + PACKET_HEADROOM,
             size,
-            Rc::clone(pool),
+            Arc::clone(pool),
             id,
         )
     })

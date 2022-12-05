@@ -4,7 +4,7 @@ use std::fs::File;
 use std::num::Wrapping;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::os::unix::io::RawFd;
-use std::rc::Rc;
+use std::sync::Arc;
 use std::sync::atomic::{self, Ordering};
 use std::time::Duration;
 use std::{io, mem, slice, thread};
@@ -38,9 +38,9 @@ pub struct VirtioDevice {
     tx_queue: Virtqueue,
     ctrl_queue: Virtqueue,
 
-    rx_mempool: Rc<Mempool>,
+    rx_mempool: Arc<Mempool>,
     // tx buffers are managed by user
-    ctrl_mempool: Rc<Mempool>,
+    ctrl_mempool: Arc<Mempool>,
 
     tx_inflight: VecDeque<Packet>,
     rx_inflight: VecDeque<Packet>,
@@ -245,11 +245,11 @@ impl IxyDevice for VirtioDevice {
         1000
     }
 
-    fn add_rx_queue(&mut self, pool: Rc<Mempool>) -> Result<u16, Box<dyn Error>> {
+    fn add_rx_queue(&mut self, pool: Arc<Mempool>) -> Result<u16, Box<dyn Error>> {
         todo!()
     }
 
-    fn add_tx_queue(&mut self, pool: Rc<Mempool>) -> Result<u16, Box<dyn Error>> {
+    fn add_tx_queue(&mut self, pool: Arc<Mempool>) -> Result<u16, Box<dyn Error>> {
         todo!()
     }
 }

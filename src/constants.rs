@@ -1084,7 +1084,7 @@ pub const IXGBE_BMCIP_IPADDR_VALID: u32                                = 0x00000
 
 /* Management Bit Fields and Masks */
 pub const IXGBE_MANC_MPROXYE: u32                                      = 0x40000000; /* Management Proxy Enable */
-pub const IXGBE_MANC_RCV_TCO_EN: u32                                   = 0x00020000; /* Rcv TCO packet enable */
+pub const IXGBE_MANC_RCV_TCO_EN: u32                                   = 0x00020000; /* Arcv TCO packet enable */
 pub const IXGBE_MANC_EN_BMC2OS: u32                                    = 0x10000000; /* Ena BMC2OS and OS2BMC traffic */
 pub const IXGBE_MANC_EN_BMC2OS_SHIFT: u32                              = 28;
 

@@ -4,7 +4,7 @@ use std::{mem, num};
 use std::os::unix::io::RawFd;
 use std::path::Path;
 use std::ptr;
-use std::rc::Rc;
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -53,7 +53,7 @@ pub struct IxgbeDevice {
 struct IxgbeRxQueue {
     descriptors: *mut ixgbe_adv_rx_desc,
     num_descriptors: usize,
-    pool: Rc<Mempool>,
+    pool: Arc<Mempool>,
     bufs_in_use: Vec<usize>,
     rx_index: usize,
 }
@@ -61,7 +61,7 @@ struct IxgbeRxQueue {
 struct IxgbeTxQueue {
     descriptors: *mut ixgbe_adv_tx_desc,
     num_descriptors: usize,
-    pool: Rc<Mempool>,
+    pool: Arc<Mempool>,
     bufs_in_use: VecDeque<usize>,
     clean_index: usize,
     tx_index: usize,
@@ -250,7 +250,7 @@ impl IxyDevice for IxgbeDevice {
 
             while let Some(packet) = buffer.pop_front() {
                 assert!(
-                    Rc::ptr_eq(&queue.pool, &packet.pool),
+                    Arc::ptr_eq(&queue.pool, &packet.pool),
                     "distinct memory pools for a single tx queue are not supported yet"
                 );
 
@@ -340,7 +340,7 @@ impl IxyDevice for IxgbeDevice {
         }
     }
 
-    fn add_rx_queue(&mut self, pool: Rc<Mempool>) -> Result<u16, Box<dyn Error>> {
+    fn add_rx_queue(&mut self, pool: Arc<Mempool>) -> Result<u16, Box<dyn Error>> {
         if self.num_rx_queues >= MAX_QUEUES {
             return Err("cannot add another queue. nic already has MAX_QUEUES".into());
         }
@@ -404,7 +404,7 @@ impl IxyDevice for IxgbeDevice {
         Ok(idx)
     }
 
-    fn add_tx_queue(&mut self, pool: Rc<Mempool>) -> Result<u16, Box<dyn Error>> {
+    fn add_tx_queue(&mut self, pool: Arc<Mempool>) -> Result<u16, Box<dyn Error>> {
         if self.num_rx_queues >= MAX_QUEUES {
             return Err("cannot add another queue. nic already has MAX_QUEUES".into());
         }
