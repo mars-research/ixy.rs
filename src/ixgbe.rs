@@ -22,6 +22,11 @@ use crate::IxyDevice;
 const DRIVER_NAME: &str = "ixy-ixgbe";
 
 const MAX_QUEUES: u16 = 64;
+const PKT_BUF_ENTRY_SIZE: usize = 2048;
+const MIN_MEMPOOL_SIZE: usize = 4096;
+
+const NUM_RX_QUEUE_ENTRIES: usize = 512;
+const NUM_TX_QUEUE_ENTRIES: usize = 512;
 
 const TX_CLEAN_BATCH: usize = 32;
 
@@ -41,6 +46,8 @@ pub struct IxgbeDevice {
     vfio_fd: RawFd,
     vfio_device_fd: RawFd,
     interrupts: Interrupts,
+    tx_dma_enabled: bool,
+    rx_enabled: bool,
 }
 
 struct IxgbeRxQueue {
@@ -351,10 +358,8 @@ impl IxyDevice for IxgbeDevice {
         self.set_flags32(IXGBE_SRRCTL(u32::from(idx)), IXGBE_SRRCTL_DROP_EN);
 
         // section 7.1.9 - setup descriptor ring
-        let num_entries = pool.num_entries();
         let ring_size_bytes =
-            num_entries * mem::size_of::<ixgbe_adv_rx_desc>();
-
+                (NUM_RX_QUEUE_ENTRIES) as usize * mem::size_of::<ixgbe_adv_rx_desc>();
         let dma: Dma<ixgbe_adv_rx_desc> = Dma::allocate(ring_size_bytes, true)?;
 
         // initialize to 0xff to prevent rogue memory accesses on premature dma activation
@@ -379,9 +384,9 @@ impl IxyDevice for IxgbeDevice {
         let rx_queue = IxgbeRxQueue {
             descriptors: dma.virt,
             pool,
-            num_descriptors: num_entries,
+            num_descriptors: NUM_RX_QUEUE_ENTRIES,
             rx_index: 0,
-            bufs_in_use: Vec::with_capacity(num_entries),
+            bufs_in_use: Vec::with_capacity(NUM_RX_QUEUE_ENTRIES),
         };
 
         // probably a broken feature, this flag is initialized with 1 but has to be set to 0
@@ -390,6 +395,11 @@ impl IxyDevice for IxgbeDevice {
         self.rx_queues.push(rx_queue);
 
         self.start_rx_queue(idx).expect(&format!("failed to start rx_queue with id: {idx}"));
+        
+        if !self.rx_enabled {
+            self.set_flags32(IXGBE_RXCTRL, IXGBE_RXCTRL_RXEN);
+            self.rx_enabled = true;
+        }
 
         Ok(idx)
     }
@@ -406,9 +416,8 @@ impl IxyDevice for IxgbeDevice {
         debug!("initializing tx queue {}", idx);
 
         // section 7.1.9 - setup descriptor ring
-        let num_entries = pool.num_entries();
         let ring_size_bytes =
-            num_entries * mem::size_of::<ixgbe_adv_tx_desc>();
+            NUM_TX_QUEUE_ENTRIES as usize * mem::size_of::<ixgbe_adv_tx_desc>();
 
         let dma: Dma<ixgbe_adv_tx_desc> = Dma::allocate(ring_size_bytes, true)?;
         unsafe {
@@ -438,14 +447,21 @@ impl IxyDevice for IxgbeDevice {
 
         let tx_queue = IxgbeTxQueue {
             descriptors: dma.virt,
-            bufs_in_use: VecDeque::with_capacity(num_entries),
+            bufs_in_use: VecDeque::with_capacity(NUM_TX_QUEUE_ENTRIES),
             pool,
-            num_descriptors: num_entries,
+            num_descriptors: NUM_TX_QUEUE_ENTRIES,
             clean_index: 0,
             tx_index: 0,
         };
 
         self.tx_queues.push(tx_queue);
+
+        // enable DMA
+        if !self.tx_dma_enabled {
+            self.set_reg32(IXGBE_DMATXCTL, IXGBE_DMATXCTL_TE);
+            self.tx_dma_enabled = true;
+        }
+
         self.start_tx_queue(idx).expect(&format!("failed to start tx_queue with id: {idx}"));
 
         Ok(idx)
@@ -494,6 +510,8 @@ impl IxgbeDevice {
             vfio_fd: unsafe { VFIO_CONTAINER_FILE_DESCRIPTOR },
             vfio_device_fd: device_fd,
             interrupts: Default::default(),
+            tx_dma_enabled: false,
+            rx_enabled: false,
         };
 
         if dev.vfio {
@@ -606,7 +624,6 @@ impl IxgbeDevice {
 
         // TODO: where to put this????
         // start rx
-        self.set_flags32(IXGBE_RXCTRL, IXGBE_RXCTRL_RXEN);
 
         Ok(())
     }
@@ -631,7 +648,6 @@ impl IxgbeDevice {
 
         // TODO: does this belong here????
         // final step: enable DMA
-        self.set_reg32(IXGBE_DMATXCTL, IXGBE_DMATXCTL_TE);
 
         Ok(())
     }
